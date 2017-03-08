@@ -61,7 +61,7 @@ import io.github.yavski.fabmenu.R;
  * Created by yavorivanov on 01/01/2016.
  */
 @CoordinatorLayout.DefaultBehavior(FabSpeedDialBehaviour.class)
-public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
+public class FabSpeedDial extends LinearLayout {
 
     /**
      * Called to notify of close and selection changes.
@@ -82,9 +82,20 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
          * Called when a menu item is selected.
          *
          * @param menuItem The menu item that is selected
+         * @param selectedButton optional
+         * @param selectedCardView optional
          * @return whether the menu item selection was handled
          */
-        boolean onMenuItemSelected(MenuItem menuItem);
+        boolean onMenuItemSelected(MenuItem menuItem, FloatingActionButton selectedButton, CardView selectedCardView);
+
+        /**
+         * Called when the menu item has been created. In here, you can customize floating action button or cardview as you'd like.
+         *
+         * @param menuItem
+         * @param selectedButton
+         * @param selectedCardView
+         */
+        void onMenuItemCreated(MenuItem menuItem, FloatingActionButton selectedButton, CardView selectedCardView);
 
         void onMenuClosed();
     }
@@ -106,6 +117,19 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
     private NavigationMenu navigationMenu;
     private Map<FloatingActionButton, MenuItem> fabMenuItemMap;
     private Map<CardView, MenuItem> cardViewMenuItemMap;
+    private Map<Integer, MenuItemViewHolder> menuViewHolderItemMap;
+
+    private static class MenuItemViewHolder {
+        MenuItem menuItem;
+        FloatingActionButton fabItem;
+        CardView cardViewItem;
+
+        MenuItemViewHolder(MenuItem menu, FloatingActionButton fab, CardView cardView) {
+            menuItem = menu;
+            fabItem = fab;
+            cardViewItem = cardView;
+        }
+    }
 
     private LinearLayout menuItemsLayout;
     FloatingActionButton fab;
@@ -130,6 +154,37 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
 
     // Variable to hold whether the menu was open or not on config change
     private boolean shouldOpenMenu;
+
+    private OnClickListener touchGuardClickListener = new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            fab.setSelected(false);
+            removeFabMenuItems();
+
+            if (menuListener != null) {
+                menuListener.onMenuClosed();
+            } else {
+                Log.d(TAG, "You haven't provided a MenuListener.");
+            }
+        }
+    };
+
+    private OnClickListener itemMenuClickListener = new OnClickListener() {
+        @Override
+        public void onClick(View v) {
+            MenuItemViewHolder holder = menuViewHolderItemMap.get((Integer) v.getTag());
+            boolean menuFabSelected = holder.fabItem.isSelected();
+
+            holder.fabItem.setSelected(!menuFabSelected);
+            holder.cardViewItem.setSelected(!menuFabSelected);
+
+            if (menuListener != null) {
+                menuListener.onMenuItemSelected(holder.menuItem, holder.fabItem, holder.cardViewItem);
+            } else {
+                Log.d(TAG, "You haven't provided a MenuListener.");
+            }
+        }
+    };
 
     private FabSpeedDial(Context context) {
         super(context);
@@ -171,6 +226,7 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
         int menuItemCount = navigationMenu.size();
         fabMenuItemMap = new HashMap<>(menuItemCount);
         cardViewMenuItemMap = new HashMap<>(menuItemCount);
+        menuViewHolderItemMap = new HashMap<>(menuItemCount);
     }
 
     private void resolveCompulsoryAttributes(TypedArray typedArray) {
@@ -197,6 +253,9 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
         if (fabDrawableTint == null) {
             fabDrawableTint = getColorStateList(R.color.fab_drawable_tint);
         }
+
+        // TODO: i think we wont use it anymore
+        //closeMenuOnMiniFabClicked = typedArray.getBoolean(R.styleable.FabSpeedDial_closeMenuOnMiniFabClicked, true);
 
         if (typedArray.hasValue(R.styleable.FabSpeedDial_fabBackgroundTint)) {
             fabBackgroundTint = typedArray.getColorStateList(R.styleable.FabSpeedDial_fabBackgroundTint);
@@ -292,7 +351,7 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
             ViewParent parent = getParent();
 
             touchGuard = new View(getContext());
-            touchGuard.setOnClickListener(this);
+            touchGuard.setOnClickListener(touchGuardClickListener);
             touchGuard.setWillNotDraw(true);
             touchGuard.setVisibility(GONE);
 
@@ -323,7 +382,8 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
             }
         }
 
-        setOnClickListener(this);
+        // TODO: i think we won't use this
+        //setOnClickListener(this);
 
         if (shouldOpenMenu)
             openMenu();
@@ -336,7 +396,8 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
         navigationMenu.setCallback(new MenuBuilder.Callback() {
             @Override
             public boolean onMenuItemSelected(MenuBuilder menu, MenuItem item) {
-                return menuListener != null && menuListener.onMenuItemSelected(item);
+                // TODO: not sure when this is called
+                return menuListener != null && menuListener.onMenuItemSelected(item, menuViewHolderItemMap.get(item.getItemId()).fabItem, menuViewHolderItemMap.get(item.getItemId()).cardViewItem);
             }
 
             @Override
@@ -345,23 +406,24 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
         });
     }
 
-    @Override
+    /*@Override
     public void onClick(View v) {
-        fab.setSelected(false);
-        removeFabMenuItems();
+        if (useTouchGuard || closeMenuOnMiniFabClicked) {
+            fab.setSelected(false);
+            removeFabMenuItems();
+        }
 
         if (menuListener != null) {
             if (v == this || v == touchGuard) {
                 menuListener.onMenuClosed();
-            } else if (v instanceof FloatingActionButton) {
-                menuListener.onMenuItemSelected(fabMenuItemMap.get(v));
-            } else if (v instanceof CardView) {
-                menuListener.onMenuItemSelected(cardViewMenuItemMap.get(v));
+            } else {
+                MenuItemViewHolder holder = menuViewHolderItemMap.get((Integer) v.getTag());
+                menuListener.onMenuItemSelected(holder.menuItem, holder.fabItem, holder.cardViewItem);
             }
         } else {
             Log.d(TAG, "You haven't provided a MenuListener.");
         }
-    }
+    }*/
 
     @Override
     protected Parcelable onSaveInstanceState() {
@@ -465,9 +527,18 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
         fabMenuItemMap.put(miniFab, menuItem);
         cardViewMenuItemMap.put(cardView, menuItem);
 
+        // TODO: testing
+        if (miniFab != null)
+            miniFab.setTag(menuItem.getItemId());
+        if (cardView != null)
+            cardView.setTag(menuItem.getItemId());
+
+        MenuItemViewHolder holder = new MenuItemViewHolder(menuItem, miniFab, cardView);
+        menuViewHolderItemMap.put(menuItem.getItemId(), holder);
+
         miniFab.setImageDrawable(menuItem.getIcon());
-        miniFab.setOnClickListener(this);
-        cardView.setOnClickListener(this);
+        miniFab.setOnClickListener(itemMenuClickListener);
+        cardView.setOnClickListener(itemMenuClickListener);
 
         ViewCompat.setAlpha(miniFab, 0f);
         ViewCompat.setAlpha(cardView, 0f);
@@ -496,6 +567,10 @@ public class FabSpeedDial extends LinearLayout implements View.OnClickListener {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             miniFab.setImageTintList(miniFabDrawableTint);
+        }
+
+        if (menuListener != null) {
+            menuListener.onMenuItemCreated(menuItem, miniFab, cardView);
         }
 
         return fabMenuItem;
